@@ -4,6 +4,10 @@ A Rust library (compiled to WebAssembly) for converting PDF files to JPG/PNG/SVG
 
 Powered by [`hayro`](https://github.com/LaurenzV/hayro) and [`wasm-bindgen`](https://github.com/wasm-bindgen/wasm-bindgen).
 
+## Motivation
+
+I wanted to implement thumbnail/page extraction via serverless functions (e.g. Cloudflare Workers, AWS Lambda, etc.), but they are often sandboxed, and/or do not have access to the full NodeJS API, so a self-contained WASM binary would be ideal.
+
 ## Features
 
 * Convert PDF files to JPG/PNG/SVG images
@@ -14,4 +18,4 @@ Powered by [`hayro`](https://github.com/LaurenzV/hayro) and [`wasm-bindgen`](htt
 
 ## Acknowledgements
 
-This project was inspired by the following on GitHub: [sermuns/pdf-to-whatever](https://github.com/sermuns/pdf-to-whatever). I wanted to create a portable, self-contained "binary" as opposed to a whole app, to make it easy to deploy into serverless environments, which are often sandboxed and do not have access to the full NodeJS API.
+This project was inspired by the following on GitHub: [sermuns/pdf-to-whatever](https://github.com/sermuns/pdf-to-whatever). I wanted to create a portable, self-contained "binary" as opposed to a whole app.
