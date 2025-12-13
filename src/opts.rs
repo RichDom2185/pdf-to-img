@@ -7,6 +7,8 @@ pub enum ThumbnailFormat {
     Png,
     #[serde(rename = "jpeg")]
     Jpeg,
+    #[serde(rename = "svg")]
+    Svg,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

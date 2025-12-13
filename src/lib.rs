@@ -1,5 +1,6 @@
 mod opts;
 
+use hayro_svg::convert;
 use std::io::prelude::*;
 use wasm_bindgen::prelude::*;
 
@@ -15,14 +16,17 @@ use web_time::Instant;
 use zip::{ZipWriter, write::SimpleFileOptions};
 
 static INTERPRETER_SETTINGS: Lazy<InterpreterSettings> = Lazy::new(InterpreterSettings::default);
-static RENDER_SETTINGS: Lazy<RenderSettings> = Lazy::new(RenderSettings::default);
 static ZIP_FILE_OPTIONS: Lazy<SimpleFileOptions> =
     Lazy::new(|| SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored));
 
-// Options type for thumbnail extraction
-pub struct ThumbnailOptions {
-    pub width: u32,
-    pub height: u32,
+static DEFAULT_DPI: u32 = 72;
+
+fn get_render_settings(dpi: u32) -> RenderSettings {
+    let mut settings = RenderSettings::default();
+    let scale_factor = dpi as f32 / DEFAULT_DPI as f32;
+    settings.x_scale = scale_factor;
+    settings.y_scale = scale_factor;
+    settings
 }
 
 fn log(args: impl std::fmt::Display) {
@@ -51,6 +55,11 @@ fn pixmap_to_bytes(pixmap: hayro::Pixmap, format: &opts::ThumbnailFormat) -> Vec
             let png_bytes = pixmap.take_png();
             convert_png_to_jpeg(&png_bytes)
         }
+        // Should not ever reach here
+        opts::ThumbnailFormat::Svg => {
+            log_error("SVG output not supported, defaulting to PNG");
+            panic!("SVG output not supported");
+        }
     }
 }
 
@@ -74,11 +83,11 @@ pub fn convert_pdf(data: &[u8], raw_opts: JsValue) -> Blob {
     }
 }
 
+// TODO: Move JSValue parsing and error handling to external convert_pdf function for better abstraction
 fn convert_pdf_internal(data: &[u8], raw_opts: JsValue) -> Result<Vec<u8>, &'static str> {
     log("Starting thumbnail extraction...");
     let opts: opts::ThumbnailOptions = serde_wasm_bindgen::from_value(raw_opts)
         .map_err(|_| "failed to parse options for thumbnail extraction")?;
-    log(format!("Thumbnail options:format={:?}", opts.format));
     let pdf = Pdf::new(Arc::new(data.to_vec())).map_err(|_| "failed reading document")?;
     log(format!("PDF has {} pages", pdf.pages().len()));
 
@@ -86,18 +95,28 @@ fn convert_pdf_internal(data: &[u8], raw_opts: JsValue) -> Result<Vec<u8>, &'sta
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
     for (page_num, page) in pdf.pages().iter().enumerate() {
         let page_num = page_num + 1;
-        let page_pixmap = render(page, &INTERPRETER_SETTINGS, &RENDER_SETTINGS);
+        let render_settings = get_render_settings(opts.dpi);
         log(format!(
             "Generating {:?} thumbnail for page {}",
             opts.format, page_num
         ));
-        let image_bytes = pixmap_to_bytes(page_pixmap, &opts.format);
+        let image_bytes = match opts.format {
+            opts::ThumbnailFormat::Jpeg | opts::ThumbnailFormat::Png => {
+                let page_pixmap = render(page, &INTERPRETER_SETTINGS, &render_settings);
+                pixmap_to_bytes(page_pixmap, &opts.format)
+            }
+            opts::ThumbnailFormat::Svg => {
+                let page_svg_string = convert(page, &INTERPRETER_SETTINGS);
+                page_svg_string.into_bytes()
+            }
+        };
         let filename = format!(
             "page-{:0>3}.{}",
             page_num,
             match opts.format {
                 opts::ThumbnailFormat::Png => "png",
                 opts::ThumbnailFormat::Jpeg => "jpeg",
+                opts::ThumbnailFormat::Svg => "svg",
             }
         );
         zip.start_file(filename, *ZIP_FILE_OPTIONS)
