@@ -1,4 +1,4 @@
-# pdf-to-jpg
+# pdf-to-img
 
 A Rust library (compiled to WebAssembly) for converting PDF files to JPG/PNG/SVG images.
 
