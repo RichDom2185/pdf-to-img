@@ -29,6 +29,10 @@ fn log(args: impl std::fmt::Display) {
     web_sys::console::log_1(&args.to_string().into());
 }
 
+fn log_error(args: impl std::fmt::Display) {
+    web_sys::console::error_1(&args.to_string().into());
+}
+
 fn convert_png_to_jpeg(png_bytes: &[u8]) -> Vec<u8> {
     let rgba_reader = ImageReader::with_format(Cursor::new(png_bytes), image::ImageFormat::Png)
         .decode()
@@ -60,18 +64,28 @@ fn bytes_to_blob(data: Vec<u8>, mime_type: &str) -> Blob {
 }
 
 #[wasm_bindgen]
-pub fn parse_incoming_pdf(data: &[u8], raw_opts: JsValue) -> Blob {
+pub fn convert_pdf(data: &[u8], raw_opts: JsValue) -> Blob {
+    match convert_pdf_internal(data, raw_opts) {
+        Ok(data) => bytes_to_blob(data, "application/zip"),
+        Err(err_msg) => {
+            log_error(format!("Error during PDF conversion: {}", err_msg));
+            bytes_to_blob(Vec::new(), "application/zip")
+        }
+    }
+}
+
+fn convert_pdf_internal(data: &[u8], raw_opts: JsValue) -> Result<Vec<u8>, &'static str> {
     log("Starting thumbnail extraction...");
     let opts: opts::ThumbnailOptions = serde_wasm_bindgen::from_value(raw_opts)
-        .expect("failed to parse options for thumbnail extraction");
+        .map_err(|_| "failed to parse options for thumbnail extraction")?;
     log(format!("Thumbnail options:format={:?}", opts.format));
-    let pdf = Pdf::new(Arc::new(data.to_vec())).expect("failed reading document");
+    let pdf = Pdf::new(Arc::new(data.to_vec())).map_err(|_| "failed reading document")?;
     log(format!("PDF has {} pages", pdf.pages().len()));
 
     let now = Instant::now();
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
     for (page_num, page) in pdf.pages().iter().enumerate() {
-        let page_num = page_num + 1; // 1-indexed!
+        let page_num = page_num + 1;
         let page_pixmap = render(page, &INTERPRETER_SETTINGS, &RENDER_SETTINGS);
         log(format!(
             "Generating {:?} thumbnail for page {}",
@@ -87,9 +101,9 @@ pub fn parse_incoming_pdf(data: &[u8], raw_opts: JsValue) -> Blob {
             }
         );
         zip.start_file(filename, *ZIP_FILE_OPTIONS)
-            .expect("failed to start file in archive");
+            .map_err(|_| "failed to start file in archive")?;
         zip.write_all(&image_bytes)
-            .expect("failed to write image data to archive");
+            .map_err(|_| "failed to write image data to archive")?;
 
         log(format!(
             "processed page {} in {:.2}s",
@@ -103,7 +117,7 @@ pub fn parse_incoming_pdf(data: &[u8], raw_opts: JsValue) -> Blob {
     ));
     let zip_data = zip
         .finish()
-        .expect("failed to finalize archive")
+        .map_err(|_| "failed to finalize archive")?
         .into_inner();
-    bytes_to_blob(zip_data, "application/zip")
+    Ok(zip_data)
 }
